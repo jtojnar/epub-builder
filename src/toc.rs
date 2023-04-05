@@ -3,6 +3,8 @@
 // this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 use crate::common;
 
+use inline_xml::{Content, Tag, Xml, xml};
+
 /// An element of the [Table of contents](struct.Toc.html)
 ///
 /// # Example
@@ -134,35 +136,40 @@ impl TocElement {
 
     /// Render element as a list element
     #[doc(hidden)]
-    pub fn render(&self, numbered: bool) -> String {
+    pub fn render(&self, numbered: bool) -> Xml {
         if self.title.is_empty() {
-            return String::new();
+            return Xml(Vec::new());
         }
         if self.children.is_empty() {
-            format!(
-                "<li><a href=\"{link}\">{title}</a></li>",
-                link = html_escape::encode_double_quoted_attribute(&self.url),
-                title = html_escape::encode_text(&self.title),
+            xml!(
+                <li><a href={&self.url}>{&self.title}</a></li>
             )
         } else {
-            let mut output: Vec<String> = Vec::new();
+            let mut output: Vec<Xml> = Vec::new();
             for child in &self.children {
                 output.push(child.render(numbered));
             }
-            let children = format!(
-                "<{oul}>\n{children}\n</{oul}>",
-                oul = if numbered { "ol" } else { "ul" }, // Not escaped: Static string
-                children = common::indent(output.join("\n"), 1), // Not escaped: XML content
+            // This is bit too verbose, why no ToXml instance for Tag?
+            let children = Xml(
+                vec![
+                    Content::Tag(
+                        Tag {
+                            name: (if numbered { "ol" } else { "ul" }).to_string(),
+                            args: Vec::new(),
+                            inner: Some(
+                                // Convert Vec<Xml> to Xml
+                                xml!({output})
+                            ),
+                        }
+                    )
+                ]
             );
-            format!(
-                "\
-<li>
-  <a href=\"{link}\">{title}</a>
-{children}
-</li>",
-                link = html_escape::encode_double_quoted_attribute(&self.url),
-                title = html_escape::encode_text(&self.title),
-                children = common::indent(children, 1), // Not escaped: XML content
+
+            xml!(
+                <li>
+                  <a href={&self.url}>{&self.title}</a>
+                  {children}
+                </li>
             )
         }
     }
@@ -261,19 +268,20 @@ impl Toc {
 
     /// Render the Toc in either <ul> or <ol> form (according to numbered)
     pub fn render(&mut self, numbered: bool) -> String {
-        let mut output: Vec<String> = Vec::new();
+        let mut output: Vec<Xml> = Vec::new();
         for elem in &self.elements {
             log::debug!("rendered elem: {:?}", &elem.render(numbered));
             output.push(elem.render(numbered));
         }
-        common::indent(
-            format!(
-                "<{oul}>\n{output}\n</{oul}>",
-                output = common::indent(output.join("\n"), 1), // Not escaped: XML content
-                oul = if numbered { "ol" } else { "ul" } // Not escaped: Static string
+
+        Tag {
+            name: (if numbered { "ol" } else { "ul" }).to_string(),
+            args: Vec::new(),
+            inner: Some(
+                // Convert Vec<Xml> to Xml
+                xml!({output})
             ),
-            2,
-        )
+        }.to_string()
     }
 }
 
@@ -290,17 +298,25 @@ fn toc_simple() {
     toc.add(TocElement::new("#4", "1.1").level(2));
     toc.add(TocElement::new("#5", "2"));
     let actual = toc.render(false);
-    let expected = "    <ul>
-      <li><a href=\"#1\">0.0.1</a></li>
-      <li>
+    let expected = "<ul>
+    <li>
+        <a href=\"#1\">0.0.1</a>
+    </li>
+    <li>
         <a href=\"#2\">1</a>
         <ul>
-          <li><a href=\"#3\">1.0.1</a></li>
-          <li><a href=\"#4\">1.1</a></li>
+            <li>
+                <a href=\"#3\">1.0.1</a>
+            </li>
+            <li>
+                <a href=\"#4\">1.1</a>
+            </li>
         </ul>
-      </li>
-      <li><a href=\"#5\">2</a></li>
-    </ul>";
+    </li>
+    <li>
+        <a href=\"#5\">2</a>
+    </li>
+</ul>";
     assert_eq!(&actual, expected);
 }
 
