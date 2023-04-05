@@ -1,7 +1,6 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with
 // this file, You can obtain one at https://mozilla.org/MPL/2.0/.
-use crate::common;
 
 use inline_xml::{Content, Tag, Xml, xml};
 
@@ -101,35 +100,32 @@ impl TocElement {
 
     /// Render element for Epub's toc.ncx format
     #[doc(hidden)]
-    pub fn render_epub(&self, mut offset: u32) -> (u32, String) {
+    pub fn render_epub(&self, mut offset: u32) -> (u32, Xml) {
         offset += 1;
         let id = offset;
         let children = if self.children.is_empty() {
-            String::new()
+            xml!()
         } else {
-            let mut output: Vec<String> = Vec::new();
+            let mut output: Vec<Xml> = Vec::new();
             for child in &self.children {
                 let (n, s) = child.render_epub(offset);
                 offset = n;
                 output.push(s);
             }
-            format!("\n{}", common::indent(output.join("\n"), 1))
+            // Convert Vec<Xml> to Xml
+            xml!({output})
         };
         // Try to sanitize the escape title of all HTML elements; if it fails, insert it as is
         (
             offset,
-            format!(
-                "\
-<navPoint id=\"navPoint-{id}\">
-  <navLabel>
-   <text>{title}</text>
-  </navLabel>
-  <content src=\"{url}\"/>{children}
-</navPoint>",
-                id = html_escape::encode_double_quoted_attribute(&id.to_string()),
-                title = html_escape::encode_text(&self.title).trim(),
-                url = html_escape::encode_double_quoted_attribute(&self.url),
-                children = children, // Not escaped: XML content
+            xml!(
+                <navPoint id={format!("navPoint-{id}")}>
+                    <navLabel>
+                        <text>{&self.title}</text>
+                    </navLabel>
+                    <content src={&self.url}/>
+                    {children}
+                </navPoint>
             ),
         )
     }
@@ -255,15 +251,16 @@ impl Toc {
     }
 
     /// Render the Toc in a toc.ncx compatible way, for EPUB.
-    pub fn render_epub(&mut self) -> String {
-        let mut output: Vec<String> = Vec::new();
+    pub fn render_epub(&mut self) -> Xml {
+        let mut output: Vec<Xml> = Vec::new();
         let mut offset = 0;
         for elem in &self.elements {
             let (n, s) = elem.render_epub(offset);
             offset = n;
             output.push(s);
         }
-        common::indent(output.join("\n"), 2)
+        // Convert Vec<Xml> to Xml
+        xml!({output})
     }
 
     /// Render the Toc in either <ul> or <ol> form (according to numbered)
@@ -326,19 +323,21 @@ fn toc_epub_simple() {
     toc.add(TocElement::new("#1", "1"));
     toc.add(TocElement::new("#2", "2"));
     let actual = toc.render_epub();
-    let expected = "    <navPoint id=\"navPoint-1\">
-      <navLabel>
-       <text>1</text>
-      </navLabel>
-      <content src=\"#1\"/>
-    </navPoint>
-    <navPoint id=\"navPoint-2\">
-      <navLabel>
-       <text>2</text>
-      </navLabel>
-      <content src=\"#2\"/>
-    </navPoint>";
-    assert_eq!(&actual, expected);
+    let expected = xml!(
+        <navPoint id="navPoint-1">
+          <navLabel>
+           <text>1</text>
+          </navLabel>
+          <content src="#1"/>
+        </navPoint>
+        <navPoint id="navPoint-2">
+          <navLabel>
+           <text>2</text>
+          </navLabel>
+          <content src="#2"/>
+        </navPoint>
+    );
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -349,31 +348,36 @@ fn toc_epub_simple_sublevels() {
     toc.add(TocElement::new("#2", "2"));
     toc.add(TocElement::new("#2.1", "2.1").level(2));
     let actual = toc.render_epub();
-    let expected = "    <navPoint id=\"navPoint-1\">
+    // Work around inline-xml parse bug
+    let lit_1_1 = "1.1";
+    let lit_2_1 = "2.1";
+    let expected = xml!(
+    <navPoint id="navPoint-1">
       <navLabel>
        <text>1</text>
       </navLabel>
-      <content src=\"#1\"/>
-      <navPoint id=\"navPoint-2\">
+      <content src="#1"/>
+      <navPoint id="navPoint-2">
         <navLabel>
-         <text>1.1</text>
+         <text>{lit_1_1}</text>
         </navLabel>
-        <content src=\"#1.1\"/>
+        <content src="#1.1"/>
       </navPoint>
     </navPoint>
-    <navPoint id=\"navPoint-3\">
+    <navPoint id="navPoint-3">
       <navLabel>
        <text>2</text>
       </navLabel>
-      <content src=\"#2\"/>
-      <navPoint id=\"navPoint-4\">
+      <content src="#2"/>
+      <navPoint id="navPoint-4">
         <navLabel>
-         <text>2.1</text>
+         <text>{lit_2_1}</text>
         </navLabel>
-        <content src=\"#2.1\"/>
+        <content src="#2.1"/>
       </navPoint>
-    </navPoint>";
-    assert_eq!(&actual, expected);
+    </navPoint>
+    );
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -383,25 +387,30 @@ fn toc_epub_broken_sublevels() {
     toc.add(TocElement::new("#2", "2"));
     toc.add(TocElement::new("#2.1", "2.1").level(2));
     let actual = toc.render_epub();
-    let expected = "    <navPoint id=\"navPoint-1\">
+    // Work around inline-xml parse bug
+    let lit_1_1 = "1.1";
+    let lit_2_1 = "2.1";
+    let expected = xml!(
+    <navPoint id="navPoint-1">
       <navLabel>
-       <text>1.1</text>
+       <text>{lit_1_1}</text>
       </navLabel>
-      <content src=\"#1.1\"/>
+      <content src="#1.1"/>
     </navPoint>
-    <navPoint id=\"navPoint-2\">
+    <navPoint id="navPoint-2">
       <navLabel>
        <text>2</text>
       </navLabel>
-      <content src=\"#2\"/>
-      <navPoint id=\"navPoint-3\">
+      <content src="#2"/>
+      <navPoint id="navPoint-3">
         <navLabel>
-         <text>2.1</text>
+         <text>{lit_2_1}</text>
         </navLabel>
-        <content src=\"#2.1\"/>
+        <content src="#2.1"/>
       </navPoint>
-    </navPoint>";
-    assert_eq!(&actual, expected);
+    </navPoint>
+    );
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -409,11 +418,13 @@ fn toc_epub_title_escaped() {
     let mut toc = Toc::new();
     toc.add(TocElement::new("#1", "D&D"));
     let actual = toc.render_epub();
-    let expected = "    <navPoint id=\"navPoint-1\">
+    let expected = xml!(
+    <navPoint id="navPoint-1">
       <navLabel>
        <text>D&amp;D</text>
       </navLabel>
-      <content src=\"#1\"/>
-    </navPoint>";
-    assert_eq!(&actual, expected);
+      <content src="#1"/>
+    </navPoint>
+    );
+    assert_eq!(actual, expected);
 }

@@ -13,6 +13,7 @@ use std::io::Read;
 use std::path::Path;
 
 use eyre::{bail, Context, Result};
+use inline_xml::{xml};
 use mustache::MapBuilder;
 
 /// Represents the EPUB version.
@@ -555,19 +556,24 @@ impl<Z: Zip> EpubBuilder<Z> {
 
     /// Render toc.ncx
     fn render_toc(&mut self) -> Result<Vec<u8>> {
-        let mut nav_points = String::new();
+        let nav_points = self.toc.render_epub();
 
-        nav_points.push_str(&self.toc.render_epub());
-
-        let data = MapBuilder::new()
-            .insert_str("toc_name", html_escape::encode_text(&self.metadata.toc_name))
-            .insert_str("nav_points", nav_points.as_str()) // Not escaped: XML content
-            .build();
-        let mut res: Vec<u8> = vec![];
-        templates::TOC_NCX
-            .render_data(&mut res, &data)
-            .wrap_err("error rendering toc.ncx template")?;
-        Ok(res)
+        let res = xml!(
+            <ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
+                <head>
+                    <meta name="dtb:depth" content="1" />
+                    <meta name="dtb:totalPageCount" content="0" />
+                    <meta name="dtb:maxPageNumber" content="0" />
+                </head>
+                <docTitle>
+                    <text>{&self.metadata.toc_name}</text>
+                </docTitle>
+                <navMap>
+                    {nav_points}
+                </navMap>
+            </ncx>
+        );
+        Ok((r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string() + &res.to_string()).into())
     }
 
     /// Render nav.xhtml
