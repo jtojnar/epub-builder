@@ -3,6 +3,8 @@
 // this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use inline_xml::{Content, Tag, Xml, xml};
+#[cfg(test)]
+use inline_xml::xml_tag;
 
 /// An element of the [Table of contents](struct.Toc.html)
 ///
@@ -24,6 +26,73 @@ pub struct TocElement {
     pub title: String,
     /// Inner elements
     pub children: Vec<TocElement>,
+}
+
+#[test]
+fn test_inline_xml_capabilities() {
+    let children = xml_tag!(
+        <li><a href="bar" download="">link &amp; bar</a></li>
+    );
+
+    // Would be more convenient if there was ToXml instance for Tag.
+    let children_as_xml = Xml(vec![Content::Tag(children)]);
+
+    // Passing XML as attribute probably should not be allowed.
+    let random_xml_attr = xml!(<br />);
+
+    // The quotes get eaten.
+    let more_attrs = xml!(foo="bar");
+    println!("{}", more_attrs.to_string());
+
+    // CDATA not supported, probably okay.
+    // let cdata = xml!(<![CDATA[hello <> worlds]]>);
+    // println!("{}", cdata.to_string());
+
+    // Yuck, this will not be properly escaped.
+    let unsafe_attr = r#"The phrase "I <3 NY" is my favourite XML testing string & XML serializers can't get enough of it."#;
+    let unsafe_content = r#"The phrase "I <3 NY" is my favourite XML testing string & XML serializers can't get enough of it."#;
+
+
+    let toc = xml!(
+        <ul>
+            <li><a href="foo">test</a></li>
+            {children_as_xml}
+            <foo children={random_xml_attr} foo={more_attrs} />
+            <unsafe attr={unsafe_attr}>{unsafe_content}</unsafe>
+        </ul>
+    );
+
+    println!("{}", toc.to_string());
+
+    // Annoyingly, XML declaration, DTD or other prolog elements are not supported:
+    // https://www.w3.org/TR/REC-xml/#NT-prolog
+    // As are not namespaces.
+    let more_xml_features = xml!(
+        // <?xml version="1.0" encoding="UTF-8"?>
+        // <!DOCTYPE html>
+        <html
+            xmlns="http://www.w3.org/1999/xhtml"
+            // xmlns:epub="http://www.idpf.org/2007/ops"
+        >
+        // <epub:foo />
+        <head>
+          <meta charset = "utf-8" />
+          <title>toc_name</title>
+          <link rel="stylesheet" type="text/css" href="stylesheet.css" />
+        </head>
+        <body>
+          <nav /*epub:*/type = "toc" id="toc">
+            <h1 id="toc-title">toc_name</h1>
+          </nav>
+          <nav /*epub:*/type = "landmarks">
+          </nav>
+        </body>
+        </html>
+    );
+
+    println!("{}", more_xml_features.to_string());
+
+    assert!(false);
 }
 
 impl TocElement {
